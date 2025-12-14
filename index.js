@@ -24,7 +24,32 @@ async function run() {
     await client.connect();
 
     const db = client.db('life-O+-db');
-   
+    const donationRequestsCollection = db.collection('donation-request')
+
+    // Donation Request related APIs
+    app.get('/donation-requests', async (req, res) => {
+      const query = {}
+      const { email } = req.query;
+
+      if (email) {
+        query.requesterEmail = email;
+      }
+
+      const cursor = donationRequestsCollection.find(query);
+      const result = await cursor.toArray();
+
+      res.send(result)
+    })
+
+    app.post('/donation-requests', async (req, res) => {
+      const donationRequest = req.body;
+
+      // send request time
+      donationRequest.createdAt = new Date();
+      const result = await donationRequestsCollection.insertOne(donationRequest);
+      
+      res.send(result)
+    })
 
 
 
