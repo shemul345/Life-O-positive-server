@@ -24,7 +24,24 @@ async function run() {
     await client.connect();
 
     const db = client.db('life-O+-db');
+    const usersCollection = db.collection('users')
     const donationRequestsCollection = db.collection('donation-request')
+
+    // Users related APIs
+    app.post('/users', async (req, res) => {
+      const user = req.body;
+      user.role = 'donor';
+      user.createdAt = new Date();
+      const email = user.email;
+      const userExist = await usersCollection.findOne({ email });
+
+      if (userExist) {
+        return res.send({message:'user exist'})
+      }
+
+      const result = await usersCollection.insertOne(user);
+      res.send(result)
+    })
 
     // Donation Request related APIs
     app.get('/donation-requests', async (req, res) => {
