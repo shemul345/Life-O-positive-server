@@ -58,6 +58,12 @@ async function run() {
     const donationRequestsCollection = db.collection('donation-request')
 
     // Users related APIs
+    app.get('/users', async (req, res) => {
+      const cursor = usersCollection.find().sort({createdAt: -1});
+      const result = await cursor.toArray();
+      res.send(result)
+    })
+
     app.post('/users', async (req, res) => {
       const user = req.body;
       user.role = 'donor';
