@@ -54,14 +54,35 @@ async function run() {
     await client.connect();
 
     const db = client.db('life-O+-db');
-    const usersCollection = db.collection('users')
-    const donationRequestsCollection = db.collection('donation-request')
+    const usersCollection = db.collection('users');
+    const donationRequestsCollection = db.collection('donation-request');
+
+    // middleware admin before accepting admin access
+    // Must be use after verifyFBToken middleware 
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+
+      if (!user || user.role !== 'admin') {
+        return res.status(403).send({message: 'forbidden access'})
+      }
+
+      next();
+    }
 
     // Users related APIs
     app.get('/users', async (req, res) => {
       const cursor = usersCollection.find().sort({createdAt: -1});
       const result = await cursor.toArray();
       res.send(result)
+    })
+
+    app.get('/users/:email/role', async (req, res) => {
+      const email = req.params.email;
+      const query = { email }
+      const user = await usersCollection.findOne(query);
+      res.send({role:user?.role || 'donor'})
     })
 
     app.post('/users', async (req, res) => {
@@ -79,7 +100,7 @@ async function run() {
       res.send(result)
     })
 
-    app.patch('/users/:id', async (req, res) => {
+    app.patch('/users/:id/role',verifyFBToken,verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const roleInfo = req.body;
       const query = { _id: new ObjectId(id) }
@@ -118,6 +139,13 @@ async function run() {
       const result = await cursor.toArray();
 
       res.send(result)
+    })
+
+    app.get('/all-blood-donation-requests', verifyFBToken, async (req, res) => {
+      const cursor = donationRequestsCollection.find().sort({ createdAt: -1 });
+      const result = await cursor.toArray();
+
+      res.send(result);
     })
 
     app.post('/donation-requests', async (req, res) => {
