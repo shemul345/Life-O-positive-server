@@ -51,7 +51,8 @@ async function run() {
         const db = client.db('life-O+-db');
         const usersCollection = db.collection('users');
         const donationRequestsCollection = db.collection('donation-request');
-        const fundingCollection = db.collection('fundings'); // For Challenge Task
+        const fundingCollection = db.collection('fundings');
+        const blogsCollection = db.collection('blogs');
 
         // Middleware: Verify Admin
         const verifyAdmin = async (req, res, next) => {
@@ -76,25 +77,25 @@ async function run() {
 
         //  User related APIs
         // Get Role
-      app.get('/users/:email/role', async (req, res) => {
-          const email = req.params.email;
-          const user = await usersCollection.findOne({ email });
-          res.send({ role: user?.role || 'donor' });
-      });
+        app.get('/users/:email/role', async (req, res) => {
+            const email = req.params.email;
+            const user = await usersCollection.findOne({ email });
+            res.send({ role: user?.role || 'donor' });
+        });
 
-       // Donor role change(Only Admin)
-      app.patch('/users/:id/role', verifyFBToken, verifyAdmin, async (req, res) => {
-          const id = req.params.id;
-          const { role } = req.body;
-          const result = await usersCollection.updateOne(
-              { _id: new ObjectId(id) },
-              { $set: { role: role } }
-          );
-          res.send(result);
-      });
+       // Change Role
+        app.patch('/users/role/:id', verifyFBToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const { role } = req.body;
+            const result = await usersCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { role: role } }
+            );
+            res.send(result);
+        });
 
-       // Update Status only Admin can block or unblock any donors
-        app.patch('/users/:id/status', verifyFBToken, verifyAdmin, async (req, res) => {
+       // Change Status (Block/Unblock)
+        app.patch('/users/status/:id', verifyFBToken, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const { status } = req.body;
             const result = await usersCollection.updateOne(
@@ -105,26 +106,42 @@ async function run() {
         });
        
 
-      // Get all user by admin
-      app.get('/users', verifyFBToken, verifyAdmin, async (req, res) => {
-            const { status } = req.query;
-            let query = {};
-            if (status) query.status = status;
-            const result = await usersCollection.find(query).sort({ createdAt: -1 }).toArray();
-            res.send(result);
-      });
+      // Get all users with Pagination and Filter (Only Admin)
+        app.get('/users', verifyFBToken, verifyAdmin, async (req, res) => {
+            try {
+                const page = parseInt(req.query.page) || 0;
+                const size = parseInt(req.query.size) || 15;
+                const status = req.query.status;
+
+                let query = {};
+                if (status && status !== 'all') {
+                    query.status = status;
+                }
+
+                const result = await usersCollection.find(query)
+                    .sort({ createdAt: -1 })
+                    .skip(page * size)
+                    .limit(size)
+                    .toArray();
+
+                const count = await usersCollection.countDocuments(query);
+
+                res.send({ result, count });
+            } catch (error) {
+                res.status(500).send({ message: "Error fetching users" });
+            }
+        });
 
         // Registration
-    app.post('/users', async (req, res) => {
-    const user = req.body;
-    user.role = 'donor';
-    user.status = 'active';
-    user.createdAt = new Date();
-    const email = user.email;
-    const userExist = await usersCollection.findOne({ email });
-    if (userExist) return res.send({ message: 'user exist' });
-    const result = await usersCollection.insertOne(user);
-    res.send(result);
+        app.post('/users', async (req, res) => {
+            const user = req.body;
+            user.role = 'donor';
+            user.status = 'active';
+            user.createdAt = new Date();
+            const userExist = await usersCollection.findOne({ email: user.email });
+            if (userExist) return res.send({ message: 'user exist' });
+            const result = await usersCollection.insertOne(user);
+            res.send(result);
         });
 
       // Public Search Donors
@@ -154,13 +171,19 @@ async function run() {
             );
             res.send(result);
         });
+      
+      // Delete User
+        app.delete('/users/:id', verifyFBToken, verifyAdmin, async (req, res) => {
+            const result = await usersCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+            res.send(result);
+        });
 
         // Donation request related APIs
-        // Create Request (Active users only)
+        // Donation request
         app.post('/donation-requests', verifyFBToken, verifyActive, async (req, res) => {
             const donationRequest = req.body;
             donationRequest.createdAt = new Date();
-            donationRequest.donationStatus = 'pending'; // Default status
+            donationRequest.donationStatus = 'pending';
             const result = await donationRequestsCollection.insertOne(donationRequest);
             res.send(result);
         });
@@ -170,22 +193,27 @@ async function run() {
             const email = req.query.email;
             const { status } = req.query;
             if (email !== req.decoded_email) return res.status(403).send({ message: 'forbidden' });
-            
             let query = { requesterEmail: email };
             if (status) query.donationStatus = status;
-
             const result = await donationRequestsCollection.find(query).sort({ createdAt: -1 }).toArray();
             res.send(result);
         });
 
         // All Requests (Admin & Volunteer)
-        app.get('/all-blood-donation-requests', verifyFBToken, async (req, res) => {
-            const { status } = req.query;
-            let query = {};
-            if (status) query.donationStatus = status;
-            const result = await donationRequestsCollection.find(query).sort({ createdAt: -1 }).toArray();
-            res.send(result);
+        app.get('/all-blood-donation-requests', async (req, res) => {
+        const statusFilter = req.query.status;
+        let query = {};
+
+            if (statusFilter && statusFilter !== 'all') {
+            query = { status: { $regex: statusFilter, $options: 'i' } };
+            }
+
+    const result = await donationRequestsCollection.find(query).toArray();
+    res.send(result);
         });
+      
+      // Accept donation
+      
       
         // Public Pending Requests
         app.get('/pending-requests', async (req, res) => {
@@ -194,25 +222,42 @@ async function run() {
         });
       
        // Accept Donation (Update to Inprogress)
-      app.patch('/donation-requests/accept/:id', verifyFBToken, async (req, res) => {
-          const id = req.params.id;
-          const { donorName, donorEmail } = req.body;
-          const result = await donationRequestsCollection.updateOne(
-              { _id: new ObjectId(id) },
-              { $set: { donationStatus: 'inprogress', donorName, donorEmail } }
-          );
-          res.send(result);
-      });
+        app.patch('/donation-requests/accept/:id', verifyFBToken, async (req, res) => {
+            const id = req.params.id;
+            const { donorName, donorEmail } = req.body;
+            const result = await donationRequestsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { 
+                    $set: { 
+                        donationStatus: 'inprogress', 
+                        donorName, 
+                        donorEmail 
+                    } 
+                }
+            );
+            res.send(result);
+        });
 
      // Update Donation Status (Done / Canceled)
-      app.patch('/donation-requests/status/:id', verifyFBToken, async (req, res) => {
-          const { status } = req.body;
-          const result = await donationRequestsCollection.updateOne(
-              { _id: new ObjectId(id) },
-              { $set: { donationStatus: status } }
-          );
-          res.send(result);
-      });
+        app.patch('/donation-requests/status/:id', verifyFBToken, async (req, res) => {
+            try {
+                const id = req.params.id; 
+                const { status } = req.body;
+                
+                const result = await donationRequestsCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: { donationStatus: status } }
+                );
+                
+                if (result.modifiedCount > 0) {
+                    res.send(result);
+                } else {
+                    res.status(404).send({ message: "No changes made or request not found" });
+                }
+            } catch (error) {
+                res.status(500).send({ message: "Internal server error" });
+            }
+        });
 
         // Delete Request
         app.delete('/donation-requests/:id', verifyFBToken, async (req, res) => {
@@ -220,20 +265,67 @@ async function run() {
             res.send(result);
         });
 
+        // Blog related APIs
+        // Blog post
+        app.post('/blogs', async (req, res) => {
+        const blog = req.body;
+        const result = await blogsCollection.insertOne(blog);
+        res.send(result);
+        });
+
+        // blogs post 
+        app.get('/blogs', async (req, res) => {
+        const status = req.query.status;
+        let query = {};
+        
+        if (status && status !== 'all') {
+            query = { status: status };
+        }
+        
+        const result = await blogsCollection.find(query).toArray();
+        res.send(result);
+        });
+
+        // blog update
+        app.patch('/blogs/status/:id', async (req, res) => {
+        const id = req.params.id;
+        const { status } = req.body;
+        const filter = { _id: new ObjectId(id) };
+        const updatedDoc = {
+            $set: {
+                status: status
+            }
+        };
+        const result = await blogsCollection.updateOne(filter, updatedDoc);
+        res.send(result);
+        });
+
+        // blog delete
+        app.delete('/blogs/:id', async (req, res) => {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await blogsCollection.deleteOne(query);
+        res.send(result);
+        });
+
+        // blog view
+        app.get('/blogs/:id', async (req, res) => {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await blogsCollection.findOne(query);
+        res.send(result);
+        });
 
       // funding related APIs
-      app.get('/admin-stats', verifyFBToken, async (req, res) => {
-          const donorsCount = await usersCollection.countDocuments({ role: 'donor' });
-          const requestsCount = await donationRequestsCollection.countDocuments();
-
-          // Calculate Total Funds from fundingCollection
-          const fundData = await fundingCollection.aggregate([
-              { $group: { _id: null, total: { $sum: "$amount" } } }
-          ]).toArray();
-          const totalFunding = fundData[0]?.total || 0;
-
-          res.send({ donorsCount, requestsCount, totalFunding });
-      });
+        app.get('/admin-stats', verifyFBToken, async (req, res) => {
+            const donorsCount = await usersCollection.countDocuments({ role: 'donor' });
+            const requestsCount = await donationRequestsCollection.countDocuments();
+            const fundData = await fundingCollection.aggregate([
+                { $group: { _id: null, total: { $sum: "$amount" } } }
+            ]).toArray();
+            const totalFunding = fundData[0]?.total || 0;
+            res.send({ donorsCount, requestsCount, totalFunding });
+        });
 
 
         
