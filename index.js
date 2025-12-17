@@ -89,7 +89,18 @@ async function run() {
             res.send(result);
       });
 
-
+        // Registration
+    app.post('/users', async (req, res) => {
+    const user = req.body;
+    user.role = 'donor'; // Default role
+    user.status = 'active'; // Default status
+    user.createdAt = new Date();
+    const email = user.email;
+    const userExist = await usersCollection.findOne({ email });
+    if (userExist) return res.send({ message: 'user exist' });
+    const result = await usersCollection.insertOne(user);
+    res.send(result);
+  });
 
 
 
@@ -176,7 +187,7 @@ async function run() {
       // funding related APIs
        
 
-      
+
         
         console.log("Database connected successfully!");
     } finally {
