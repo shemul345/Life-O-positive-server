@@ -75,7 +75,6 @@ async function run() {
         };
 
         //  User related APIs
-        
         // Get Role
       app.get('/users/:email/role', async (req, res) => {
           const email = req.params.email;
@@ -148,7 +147,7 @@ async function run() {
         app.patch('/profile/:email', verifyFBToken, async (req, res) => {
             const email = req.params.email;
             const updatedData = req.body;
-            delete updatedData.email; // Ensure email is not editable
+            delete updatedData.email;
             const result = await usersCollection.updateOne(
                 { email: email },
                 { $set: updatedData }
@@ -205,14 +204,15 @@ async function run() {
           res.send(result);
       });
 
-        
-      
-      
-      
-      
-      
-      
-      
+     // Update Donation Status (Done / Canceled)
+      app.patch('/donation-requests/status/:id', verifyFBToken, async (req, res) => {
+          const { status } = req.body;
+          const result = await donationRequestsCollection.updateOne(
+              { _id: new ObjectId(id) },
+              { $set: { donationStatus: status } }
+          );
+          res.send(result);
+      });
 
         // Delete Request
         app.delete('/donation-requests/:id', verifyFBToken, async (req, res) => {
