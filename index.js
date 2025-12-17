@@ -74,10 +74,25 @@ async function run() {
             next();
         };
 
-        // -------------------------------------------------------------------------
-        // 1. USERS RELATED APIs
-        // -------------------------------------------------------------------------
+        //  User related APIs
+        
+        // Get Role
+      app.get('/users/:email/role', async (req, res) => {
+          const email = req.params.email;
+          const user = await usersCollection.findOne({ email });
+          res.send({ role: user?.role || 'donor' });
+      });
 
+       // Donor role change(Only Admin)
+      app.patch('/users/:id/role', verifyFBToken, verifyAdmin, async (req, res) => {
+          const id = req.params.id;
+          const { role } = req.body;
+          const result = await usersCollection.updateOne(
+              { _id: new ObjectId(id) },
+              { $set: { role: role } }
+          );
+          res.send(result);
+      });
        
 
       // Get all user by admin
@@ -90,7 +105,7 @@ async function run() {
       });
 
         // Registration
-    app.post('/users', async (req, res) => {
+        app.post('/users', async (req, res) => {
     const user = req.body;
     user.role = 'donor'; // Default role
     user.status = 'active'; // Default status
@@ -100,16 +115,10 @@ async function run() {
     if (userExist) return res.send({ message: 'user exist' });
     const result = await usersCollection.insertOne(user);
     res.send(result);
-  });
+        });
 
-
-
-
-
-      
-       
-        // Public Search Donors
-        app.get('/donors-search', async (req, res) => {
+      // Public Search Donors
+      app.get('/donors-search', async (req, res) => {
             const { bloodGroup, district, upazila } = req.query;
             let query = { role: 'donor', status: 'active' };
             if (bloodGroup) query.bloodGroup = bloodGroup;
