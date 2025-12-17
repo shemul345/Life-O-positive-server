@@ -93,6 +93,17 @@ async function run() {
           );
           res.send(result);
       });
+
+       // Update Status (Admin only: block/unblock)
+        app.patch('/users/:id/status', verifyFBToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const { status } = req.body;
+            const result = await usersCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { status: status } }
+            );
+            res.send(result);
+        });
        
 
       // Get all user by admin
@@ -105,10 +116,10 @@ async function run() {
       });
 
         // Registration
-        app.post('/users', async (req, res) => {
+    app.post('/users', async (req, res) => {
     const user = req.body;
-    user.role = 'donor'; // Default role
-    user.status = 'active'; // Default status
+    user.role = 'donor';
+    user.status = 'active';
     user.createdAt = new Date();
     const email = user.email;
     const userExist = await usersCollection.findOne({ email });
