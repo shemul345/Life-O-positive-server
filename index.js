@@ -222,7 +222,18 @@ async function run() {
 
 
       // funding related APIs
-       
+      app.get('/admin-stats', verifyFBToken, async (req, res) => {
+          const donorsCount = await usersCollection.countDocuments({ role: 'donor' });
+          const requestsCount = await donationRequestsCollection.countDocuments();
+
+          // Calculate Total Funds from fundingCollection
+          const fundData = await fundingCollection.aggregate([
+              { $group: { _id: null, total: { $sum: "$amount" } } }
+          ]).toArray();
+          const totalFunding = fundData[0]?.total || 0;
+
+          res.send({ donorsCount, requestsCount, totalFunding });
+      });
 
 
         
