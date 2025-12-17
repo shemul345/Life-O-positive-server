@@ -94,7 +94,7 @@ async function run() {
           res.send(result);
       });
 
-       // Update Status (Admin only: block/unblock)
+       // Update Status only Admin can block or unblock any donors
         app.patch('/users/:id/status', verifyFBToken, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const { status } = req.body;
@@ -187,6 +187,23 @@ async function run() {
             const result = await donationRequestsCollection.find(query).sort({ createdAt: -1 }).toArray();
             res.send(result);
         });
+      
+        // Public Pending Requests
+        app.get('/pending-requests', async (req, res) => {
+            const result = await donationRequestsCollection.find({ donationStatus: 'pending' }).toArray();
+            res.send(result);
+        });
+      
+       // Accept Donation (Update to Inprogress)
+      app.patch('/donation-requests/accept/:id', verifyFBToken, async (req, res) => {
+          const id = req.params.id;
+          const { donorName, donorEmail } = req.body;
+          const result = await donationRequestsCollection.updateOne(
+              { _id: new ObjectId(id) },
+              { $set: { donationStatus: 'inprogress', donorName, donorEmail } }
+          );
+          res.send(result);
+      });
 
         
       
