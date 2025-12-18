@@ -179,6 +179,14 @@ async function run() {
         });
 
         // Donation request related APIs
+
+        // Donations Requests
+        app.get('/donation-requests/:id', async (req, res) => {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await donationRequestsCollection.findOne(query);
+        res.send(result);
+        });
         // Donation request
         app.post('/donation-requests', verifyFBToken, verifyActive, async (req, res) => {
             const donationRequest = req.body;
@@ -188,13 +196,15 @@ async function run() {
             res.send(result);
         });
 
-        // My Requests (Donor)
-        app.get('/my-requests', verifyFBToken, async (req, res) => {
+        // My Requests (Donor/Requester)
+            app.get('/donation-requests', verifyFBToken, async (req, res) => {
             const email = req.query.email;
-            const { status } = req.query;
-            if (email !== req.decoded_email) return res.status(403).send({ message: 'forbidden' });
+            
+            if (email !== req.decoded_email) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
             let query = { requesterEmail: email };
-            if (status) query.donationStatus = status;
             const result = await donationRequestsCollection.find(query).sort({ createdAt: -1 }).toArray();
             res.send(result);
         });
@@ -204,13 +214,13 @@ async function run() {
         const statusFilter = req.query.status;
         let query = {};
 
-            if (statusFilter && statusFilter !== 'all') {
-            query = { status: { $regex: statusFilter, $options: 'i' } };
-            }
+        if (statusFilter && statusFilter !== 'all') {
+            query = { status: statusFilter }; // regex দরকার নেই যদি ফিক্সড স্ট্যাটাস হয়
+        }
 
-    const result = await donationRequestsCollection.find(query).toArray();
-    res.send(result);
-        });
+        const result = await donationRequestsCollection.find(query).toArray();
+        res.send(result);
+     });
       
       // Accept donation
       
@@ -240,23 +250,20 @@ async function run() {
 
      // Update Donation Status (Done / Canceled)
         app.patch('/donation-requests/status/:id', verifyFBToken, async (req, res) => {
-            try {
-                const id = req.params.id; 
-                const { status } = req.body;
-                
-                const result = await donationRequestsCollection.updateOne(
-                    { _id: new ObjectId(id) },
-                    { $set: { donationStatus: status } }
-                );
-                
-                if (result.modifiedCount > 0) {
-                    res.send(result);
-                } else {
-                    res.status(404).send({ message: "No changes made or request not found" });
-                }
-            } catch (error) {
-                res.status(500).send({ message: "Internal server error" });
+        const id = req.params.id;
+        const { status, donorName, donorEmail } = req.body; // ফ্রন্টএন্ড থেকে পাঠানো ডাটা
+        const query = { _id: new ObjectId(id) };
+        
+        const updateDoc = {
+            $set: { 
+                status: status, // pending, inprogress, done, canceled
+                donorName: donorName || null,
+                donorEmail: donorEmail || null
             }
+        };
+        
+        const result = await donationRequestsCollection.updateOne(query, updateDoc);
+        res.send(result);
         });
 
         // Delete Request
