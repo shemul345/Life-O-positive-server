@@ -210,17 +210,31 @@ async function run() {
         });
 
         // All Requests (Admin & Volunteer)
-        app.get('/all-blood-donation-requests', async (req, res) => {
-        const statusFilter = req.query.status;
-        let query = {};
+       app.get('/all-blood-donation-requests', async (req, res) => {
+    const page = parseInt(req.query.page) || 0;
+    const size = parseInt(req.query.size) || 15;
+    const statusFilter = req.query.status;
 
-        if (statusFilter && statusFilter !== 'all') {
-            query = { status: statusFilter }; // regex দরকার নেই যদি ফিক্সড স্ট্যাটাস হয়
-        }
+    let query = {};
+    if (statusFilter && statusFilter !== 'all') {
+        // এখানে $or ব্যবহার করুন যাতে status বা donationStatus যেকোনো একটায় ডাটা থাকলে পায়
+        query = {
+            $or: [
+                { status: statusFilter },
+                { donationStatus: statusFilter }
+            ]
+        };
+    }
 
-        const result = await donationRequestsCollection.find(query).toArray();
-        res.send(result);
-     });
+    const result = await donationRequestsCollection.find(query)
+        .sort({ createdAt: -1 }) 
+        .skip(page * size)
+        .limit(size)
+        .toArray();
+
+    const count = await donationRequestsCollection.countDocuments(query);
+    res.send({ result, count });
+        });
       
       // Accept donation
       
@@ -273,24 +287,34 @@ async function run() {
         });
 
         // Blog related APIs
-        // Blog post
+        // Post blogs
         app.post('/blogs', async (req, res) => {
         const blog = req.body;
         const result = await blogsCollection.insertOne(blog);
         res.send(result);
         });
 
-        // blogs post 
+        // Get blogs 
         app.get('/blogs', async (req, res) => {
+        const page = parseInt(req.query.page) || 0;
+        const size = parseInt(req.query.size) || 10;
         const status = req.query.status;
+
+        // যদি status 'all' হয় অথবা না থাকে, তবে সব দেখাবে। 
+        // আর যদি specific কিছু থাকে (যেমন 'draft'), তবে শুধু সেটাই দেখাবে।
         let query = {};
-        
         if (status && status !== 'all') {
             query = { status: status };
         }
-        
-        const result = await blogsCollection.find(query).toArray();
-        res.send(result);
+
+        const result = await blogsCollection.find(query)
+            .sort({ _id: -1 }) // নতুন কন্টেন্ট আগে দেখাবে
+            .skip(page * size)
+            .limit(size)
+            .toArray();
+
+        const count = await blogsCollection.countDocuments(query);
+        res.send({ result, count });
         });
 
         // blog update
@@ -298,12 +322,10 @@ async function run() {
         const id = req.params.id;
         const { status } = req.body;
         const filter = { _id: new ObjectId(id) };
-        const updatedDoc = {
-            $set: {
-                status: status
-            }
+        const updateDoc = {
+            $set: { status: status },
         };
-        const result = await blogsCollection.updateOne(filter, updatedDoc);
+        const result = await blogsCollection.updateOne(filter, updateDoc);
         res.send(result);
         });
 
