@@ -1,3 +1,4 @@
 node_modules
 .env
 life-o-positive-firebase-adminsdk.json
+.vercel

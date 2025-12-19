@@ -248,8 +248,8 @@ const client = new MongoClient(uri, {
             res.send(result);
         });
 
-        // All Requests (Admin & Volunteer)
-       app.get('/all-blood-donation-requests', async (req, res) => {
+        // All Requests
+       app.get('/all-blood-donation-requests',verifyActive,verifyFBToken, async (req, res) => {
         const page = parseInt(req.query.page) || 0;
         const size = parseInt(req.query.size) || 15;
         const statusFilter = req.query.status;
