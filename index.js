@@ -3,21 +3,26 @@ const app = express();
 const cors = require('cors');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const admin = require("firebase-admin");
 
 const port = process.env.PORT || 3000;
 
 // Firebase Admin Setup
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+const decoded = Buffer.from(process.env.FIREBASE_SERVICE_KEY, 'base64').toString('utf8')
+const serviceAccount = JSON.parse(decoded);
+
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
 
-// Middleware
-app.use(express.json());
-app.use(cors());
+    // middleware
+    app.use(cors({
+        origin: ['http://localhost:5173'], 
+        credentials: true
+    }));
+    app.use(express.json()); 
 
-// --- Middlewares ---
 
 const verifyFBToken = async (req, res, next) => {
     const token = req.headers.authorization;
@@ -43,15 +48,15 @@ const client = new MongoClient(uri, {
     }
 });
 
-async function run() {
-    try {
+    async function run() {
+        try {
         // Connect to MongoDB
-        // await client.connect(); // Production-এ এটি রিমুভ করতে পারেন যদি Vercel-এ সমস্যা হয়
+        // await client.connect();
 
         const db = client.db('life-O+-db');
         const usersCollection = db.collection('users');
         const donationRequestsCollection = db.collection('donation-request');
-        const fundingCollection = db.collection('fundings');
+        const fundingCollection = db.collection("fundings");
         const blogsCollection = db.collection('blogs');
 
         // Middleware: Verify Admin
@@ -74,6 +79,27 @@ async function run() {
             }
             next();
         };
+
+       // Admin Stats - ফ্রন্টএন্ডের AdminHome এর জন্য
+        app.get('/admin-stats', verifyFBToken, verifyAdmin, async (req, res) => {
+            try {
+                const donorsCount = await usersCollection.countDocuments({ role: 'donor' });
+                
+                const requestsCount = await donationRequestsCollection.countDocuments();
+                
+                const fundingData = await fundingCollection.find().toArray();
+                const totalFunding = fundingData.reduce((sum, item) => sum + item.amount, 0);
+
+                res.send({
+                    donorsCount,
+                    requestsCount,
+                    totalFunding
+                });
+            } catch (error) {
+                console.error("Stats Error:", error);
+                res.status(500).send({ message: "Error fetching stats" });
+            }
+        });
 
         //  User related APIs
         // Get Role
@@ -177,9 +203,9 @@ async function run() {
             const result = await usersCollection.deleteOne({ _id: new ObjectId(req.params.id) });
             res.send(result);
         });
+            
 
         // Donation request related APIs
-
         // Donations Requests
         app.get('/donation-requests/:id', async (req, res) => {
         const id = req.params.id;
@@ -187,6 +213,19 @@ async function run() {
         const result = await donationRequestsCollection.findOne(query);
         res.send(result);
         });
+            
+        // My 3 recent donation requests
+        app.get('/recent-requests/:email', async (req, res) => {
+            const email = req.params.email;
+            const query = { requesterEmail: email };
+            const result = await donationRequestsCollection
+            .find(query)
+            .sort({ createdAt: -1 })
+            .limit(3)
+            .toArray();
+            res.send(result);
+        });
+            
         // Donation request
         app.post('/donation-requests', verifyFBToken, verifyActive, async (req, res) => {
             const donationRequest = req.body;
@@ -211,20 +250,19 @@ async function run() {
 
         // All Requests (Admin & Volunteer)
        app.get('/all-blood-donation-requests', async (req, res) => {
-    const page = parseInt(req.query.page) || 0;
-    const size = parseInt(req.query.size) || 15;
-    const statusFilter = req.query.status;
+        const page = parseInt(req.query.page) || 0;
+        const size = parseInt(req.query.size) || 15;
+        const statusFilter = req.query.status;
 
-    let query = {};
-    if (statusFilter && statusFilter !== 'all') {
-        // এখানে $or ব্যবহার করুন যাতে status বা donationStatus যেকোনো একটায় ডাটা থাকলে পায়
-        query = {
-            $or: [
-                { status: statusFilter },
-                { donationStatus: statusFilter }
-            ]
-        };
-    }
+        let query = {};
+        if (statusFilter && statusFilter !== 'all') {
+            query = {
+                $or: [
+                    { status: statusFilter },
+                    { donationStatus: statusFilter }
+                ]
+            };
+        }
 
     const result = await donationRequestsCollection.find(query)
         .sort({ createdAt: -1 }) 
@@ -235,9 +273,6 @@ async function run() {
     const count = await donationRequestsCollection.countDocuments(query);
     res.send({ result, count });
         });
-      
-      // Accept donation
-      
       
         // Public Pending Requests
         app.get('/pending-requests', async (req, res) => {
@@ -265,12 +300,12 @@ async function run() {
      // Update Donation Status (Done / Canceled)
         app.patch('/donation-requests/status/:id', verifyFBToken, async (req, res) => {
         const id = req.params.id;
-        const { status, donorName, donorEmail } = req.body; // ফ্রন্টএন্ড থেকে পাঠানো ডাটা
+        const { status, donorName, donorEmail } = req.body;
         const query = { _id: new ObjectId(id) };
         
         const updateDoc = {
             $set: { 
-                status: status, // pending, inprogress, done, canceled
+                status: status,
                 donorName: donorName || null,
                 donorEmail: donorEmail || null
             }
@@ -300,15 +335,13 @@ async function run() {
         const size = parseInt(req.query.size) || 10;
         const status = req.query.status;
 
-        // যদি status 'all' হয় অথবা না থাকে, তবে সব দেখাবে। 
-        // আর যদি specific কিছু থাকে (যেমন 'draft'), তবে শুধু সেটাই দেখাবে।
         let query = {};
         if (status && status !== 'all') {
             query = { status: status };
         }
 
         const result = await blogsCollection.find(query)
-            .sort({ _id: -1 }) // নতুন কন্টেন্ট আগে দেখাবে
+            .sort({ _id: -1 })
             .skip(page * size)
             .limit(size)
             .toArray();
@@ -345,30 +378,110 @@ async function run() {
         res.send(result);
         });
 
-      // funding related APIs
-        app.get('/admin-stats', verifyFBToken, async (req, res) => {
-            const donorsCount = await usersCollection.countDocuments({ role: 'donor' });
-            const requestsCount = await donationRequestsCollection.countDocuments();
-            const fundData = await fundingCollection.aggregate([
-                { $group: { _id: null, total: { $sum: "$amount" } } }
-            ]).toArray();
-            const totalFunding = fundData[0]?.total || 0;
-            res.send({ donorsCount, requestsCount, totalFunding });
+    // Funding Related APIs
+    // Create Checkout Session
+    app.post('/create-funding-checkout', async (req, res) => {
+    try {
+        const { amount, donorName, donorEmail } = req.body;
+        
+        if (!amount) {
+            return res.status(400).send({ error: "Amount is required" });
+        }
+
+        const unitAmount = Math.round(parseFloat(amount) * 100);
+
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: [
+                {
+                    price_data: {
+                        currency: 'usd',
+                        unit_amount: unitAmount,
+                        product_data: {
+                            name: `Voluntary Funding - LifeO+`,
+                        }
+                    },
+                    quantity: 1,
+                },
+            ],
+            mode: 'payment',
+            metadata: { donorName: donorName || 'Anonymous' },
+            customer_email: donorEmail,
+            success_url: `${process.env.SITE_DOMAIN}/funding-success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.SITE_DOMAIN}/funding-cancelled`,
         });
 
-
-        
-        console.log("Database connected successfully!");
-    } finally {
-        
+        res.send({ url: session.url });
+    } catch (error) {
+        // এই ক্যাচ ব্লক সার্ভার ক্র্যাশ হতে দিবে না, বরং কনসোলে এরর দেখাবে
+        console.error("CRASH PREVENTED. Stripe Error:", error.message);
+        res.status(500).send({ error: error.message });
     }
-}
-run().catch(console.dir);
+    });
 
-app.get('/', (req, res) => {
-    res.send('Life O+ Server is running');
-});
+    // Funding Success Handler
+    app.patch('/funding-success', async (req, res) => {
+        try {
+            const sessionId = req.query.session_id;
+            
+            const session = await stripe.checkout.sessions.retrieve(sessionId);
+            const transactionId = session.payment_intent;
 
-app.listen(port, () => {
-    console.log(`Life O+ app listening on port ${port}`);
-});
+            const paymentExist = await fundingCollection.findOne({ transactionId });
+            if (paymentExist) {
+                return res.send({ 
+                    success: true, 
+                    transactionId, 
+                    message: 'Payment already recorded' 
+                });
+            }
+
+            if (session.payment_status === 'paid') {
+                const fundingHistory = {
+                    amount: session.amount_total / 100, // Convert cents to dollars
+                    currency: session.currency,
+                    donorEmail: session.customer_email,
+                    donorName: session.metadata.donorName,
+                    transactionId: transactionId,
+                    paidAt: new Date(),
+                    status: 'completed',
+                    paymentType: 'voluntary_funding'
+                };
+
+                // Insert into your funding collection
+                const result = await fundingCollection.insertOne(fundingHistory);
+                
+                res.send({ 
+                    success: true, 
+                    transactionId, 
+                    info: result 
+                });
+            } else {
+                res.status(400).send({ success: false, message: 'Payment not completed' });
+            }
+        } catch (error) {
+            console.error("Success Handler Error:", error.message);
+            res.status(500).send({ error: "Internal Server Error during payment verification" });
+        }
+    });
+
+    // Get All Funding
+    app.get('/all-fundings', async (req, res) => {
+        const result = await fundingCollection.find().sort({ paidAt: -1 }).toArray();
+        res.send(result);
+    });
+
+        console.log("Database connected successfully!");
+        } finally {
+        
+     }
+    }
+    run().catch(console.dir);
+
+    app.get('/', (req, res) => {
+        res.send('Life O+ Server is running');
+    });
+
+    app.listen(port, () => {
+        console.log(`Life O+ app listening on port ${port}`);
+    });
