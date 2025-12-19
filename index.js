@@ -18,7 +18,7 @@ admin.initializeApp({
 
     // middleware
     app.use(cors({
-        origin: ['http://localhost:5173'], 
+        origin: [process.env.SITE_DOMAIN],
         credentials: true
     }));
     app.use(express.json()); 
@@ -80,7 +80,7 @@ const client = new MongoClient(uri, {
             next();
         };
 
-       // Admin Stats - ফ্রন্টএন্ডের AdminHome এর জন্য
+       // Admin Stats
         app.get('/admin-stats', verifyFBToken, verifyAdmin, async (req, res) => {
             try {
                 const donorsCount = await usersCollection.countDocuments({ role: 'donor' });
