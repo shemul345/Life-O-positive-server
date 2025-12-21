@@ -437,7 +437,7 @@ const client = new MongoClient(uri, {
 
         res.send({ url: session.url });
     } catch (error) {
-        // এই ক্যাচ ব্লক সার্ভার ক্র্যাশ হতে দিবে না, বরং কনসোলে এরর দেখাবে
+        
         console.error("CRASH PREVENTED. Stripe Error:", error.message);
         res.status(500).send({ error: error.message });
     }
@@ -462,7 +462,7 @@ const client = new MongoClient(uri, {
 
             if (session.payment_status === 'paid') {
                 const fundingHistory = {
-                    amount: session.amount_total / 100, // Convert cents to dollars
+                    amount: session.amount_total / 100,
                     currency: session.currency,
                     donorEmail: session.customer_email,
                     donorName: session.metadata.donorName,
@@ -472,7 +472,6 @@ const client = new MongoClient(uri, {
                     paymentType: 'voluntary_funding'
                 };
 
-                // Insert into your funding collection
                 const result = await fundingCollection.insertOne(fundingHistory);
                 
                 res.send({ 
