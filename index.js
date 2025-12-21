@@ -17,11 +17,19 @@ admin.initializeApp({
 });
 
     // middleware
-    app.use(cors({
-        origin: [process.env.SITE_DOMAIN],
-        credentials: true
-    }));
-    app.use(express.json()); 
+    // app.use(cors({
+    //     origin: [process.env.SITE_DOMAIN],
+    //     credentials: true
+// }));
+
+app.use(cors({
+    origin: [
+        process.env.SITE_DOMAIN, 
+        "http://localhost:5173" 
+    ],
+    credentials: true
+}));
+app.use(express.json()); 
 
 
 const verifyFBToken = async (req, res, next) => {
@@ -59,7 +67,8 @@ const client = new MongoClient(uri, {
         const fundingCollection = db.collection("fundings");
         const blogsCollection = db.collection('blogs');
 
-        // Middleware: Verify Admin
+        // Middleware
+        // Verify Admin
         const verifyAdmin = async (req, res, next) => {
             const email = req.decoded_email;
             const query = { email };
@@ -70,12 +79,27 @@ const client = new MongoClient(uri, {
             next();
         };
 
-        // Middleware: Check if User is Blocked
+        // Check if User is Blocked
         const verifyActive = async (req, res, next) => {
             const email = req.decoded_email;
             const user = await usersCollection.findOne({ email });
             if (user?.status === 'blocked') {
                 return res.status(403).send({ message: 'Your account is blocked. You cannot perform this action.' });
+            }
+            next();
+            };
+            
+        // Verify Volunteer or Admin
+        const verifyVolunteerwithAdmin = async (req, res, next) => {
+            const email = req.decoded_email;
+            const query = { email };
+            const user = await usersCollection.findOne(query);
+            
+            const isVolunteer = user?.role === 'volunteer';
+            const isAdmin = user?.role === 'admin';
+
+            if (!user || (!isVolunteer && !isAdmin)) {
+                return res.status(403).send({ message: 'forbidden access: only volunteers and admins allowed' });
             }
             next();
         };
@@ -133,7 +157,7 @@ const client = new MongoClient(uri, {
        
 
       // Get all users with Pagination and Filter (Only Admin)
-        app.get('/users', verifyFBToken, verifyAdmin, async (req, res) => {
+        app.get('/users', verifyFBToken, verifyAdmin, verifyActive, async (req, res) => {
             try {
                 const page = parseInt(req.query.page) || 0;
                 const size = parseInt(req.query.size) || 15;
@@ -227,7 +251,7 @@ const client = new MongoClient(uri, {
         });
             
         // Donation request
-        app.post('/donation-requests', verifyFBToken, verifyActive, async (req, res) => {
+        app.post('/donation-requests', verifyFBToken, async (req, res) => {
             const donationRequest = req.body;
             donationRequest.createdAt = new Date();
             donationRequest.donationStatus = 'pending';
@@ -249,7 +273,7 @@ const client = new MongoClient(uri, {
         });
 
         // All Requests
-       app.get('/all-blood-donation-requests',verifyActive,verifyFBToken, async (req, res) => {
+       app.get('/all-blood-donation-requests',verifyFBToken,verifyVolunteerwithAdmin, async (req, res) => {
         const page = parseInt(req.query.page) || 0;
         const size = parseInt(req.query.size) || 15;
         const statusFilter = req.query.status;
@@ -298,7 +322,7 @@ const client = new MongoClient(uri, {
         });
 
      // Update Donation Status (Done / Canceled)
-        app.patch('/donation-requests/status/:id', verifyFBToken, async (req, res) => {
+        app.patch('/donation-requests/status/:id', verifyFBToken,verifyVolunteerwithAdmin, async (req, res) => {
         const id = req.params.id;
         const { status, donorName, donorEmail } = req.body;
         const query = { _id: new ObjectId(id) };
@@ -316,7 +340,7 @@ const client = new MongoClient(uri, {
         });
 
         // Delete Request
-        app.delete('/donation-requests/:id', verifyFBToken, async (req, res) => {
+        app.delete('/donation-requests/:id', verifyFBToken,verifyAdmin, async (req, res) => {
             const result = await donationRequestsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
             res.send(result);
         });
